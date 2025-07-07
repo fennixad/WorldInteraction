@@ -7,6 +7,7 @@ TagManager:
   - Nido
   - Criatura
   - CriaturaCria
+  - PointOfGo
   layers:
   - Default
   - TransparentFX
