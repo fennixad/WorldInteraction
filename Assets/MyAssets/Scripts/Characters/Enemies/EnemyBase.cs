@@ -36,7 +36,6 @@ public abstract class EnemyBase : MonoBehaviour
         agent = GetComponent<NavMeshAgent>();
         anim = GetComponent<Animator>();
 
-        // Asegurarse de que el NavMeshAgent esté habilitado y no esté parado al inicio
         if (agent != null)
         {
             agent.enabled = true;
@@ -46,7 +45,6 @@ public abstract class EnemyBase : MonoBehaviour
 
     protected virtual void Start()
     {
-        // Buscar el PlayerManager y obtener el jugador
         if (PlayerManager.Instance != null)
         {
             player = PlayerManager.Instance.transform;
@@ -61,27 +59,22 @@ public abstract class EnemyBase : MonoBehaviour
             Debug.LogWarning(gameObject.name + ": PlayerManager.Instance no encontrado. Asegúrate de que PlayerManager esté en la escena y configurado.");
         }
 
-        // Registrarse en el NPCSpawner si existe
         if (NPCSpawner.instance != null)
             NPCSpawner.instance.RegisterNPC(this);
 
-        // Encontrar todos los puntos de patrulla con el tag "PointOfGo"
         GameObject[] tempPoints = GameObject.FindGameObjectsWithTag("PointOfGo");
         if (tempPoints.Length > 0)
         {
             pointsOfGo = new List<GameObject>(tempPoints);
-            // Opcional: Ordenar los puntos por nombre para una patrulla predecible (ej. Point_0, Point_1, etc.)
-            pointsOfGo.Sort((a, b) => string.Compare(a.name, b.name));
-
+            // Aquí puedes descomentar si quieres ordenar los puntos por nombre
+            // pointsOfGo.Sort((a, b) => string.Compare(a.name, b.name));
             Debug.Log("<color=green>" + gameObject.name + ": Encontrados y ordenados " + pointsOfGo.Count + " puntos de patrulla.</color>");
-
-            // Iniciar la patrulla. Se moverá al primer punto (índice 0).
             StartPatrol();
         }
         else
         {
             Debug.LogWarning("<color=red>" + gameObject.name + ": ¡ERROR! No se encontraron objetos con el tag 'PointOfGo'. La patrulla no funcionará.</color>");
-            isPatrolling = false; // Asegurar que no intenta patrullar
+            isPatrolling = false;
         }
     }
 
@@ -89,36 +82,38 @@ public abstract class EnemyBase : MonoBehaviour
     {
         if (aggro && player != null && playerStats != null)
         {
-            if (isPatrolling) 
+            if (isPatrolling)
             {
-                StopAllCoroutines(); 
+                StopAllCoroutines();
                 isPatrolling = false;
                 isWaitingAtPoint = false;
-                if (agent.isActiveAndEnabled) agent.isStopped = false; 
-                Debug.Log("<color=orange>" + gameObject.name + ": Aggro activado, deteniendo patrulla y persiguiendo.</color>");
+                if (agent.isActiveAndEnabled) agent.isStopped = false;
             }
 
             float dist = Vector3.Distance(transform.position, player.position);
 
             if (dist > attackRange)
             {
-                if (agent.isActiveAndEnabled && !agent.isStopped) 
+                if (agent.isActiveAndEnabled)
                 {
+                    if (agent.isStopped) // Si está parado, reanudar
+                    {
+                        agent.isStopped = false;
+                        Debug.Log(gameObject.name + ": Reanudando persecución del jugador.");
+                    }
                     agent.SetDestination(player.position);
                 }
             }
-            else 
+            else // Dentro del rango de ataque
             {
-                if (agent.isActiveAndEnabled) agent.isStopped = true; 
+                if (agent.isActiveAndEnabled) agent.isStopped = true;
                 Vector3 lookPos = player.position;
                 lookPos.y = transform.position.y;
                 transform.LookAt(lookPos);
                 TryAttack();
-
             }
         }
-
-        else
+        else // Si no hay aggro, gestiona la patrulla
         {
             if (pointsOfGo != null && pointsOfGo.Count > 0 && !isPatrolling && !isWaitingAtPoint)
             {
@@ -127,11 +122,8 @@ public abstract class EnemyBase : MonoBehaviour
 
             if (isPatrolling && !isWaitingAtPoint)
             {
-                // Verificar si el agente ha llegado a su destino actual
-                // Usamos agent.remainingDistance y agent.pathStatus para mayor fiabilidad
                 if (agent.pathStatus == NavMeshPathStatus.PathComplete && agent.remainingDistance <= agent.stoppingDistance + patrolTolerance && !agent.pathPending)
                 {
-                    Debug.Log(gameObject.name + ": <color=blue>Llegó cerca del punto " + pointsOfGo[currentPointIndex].name + ". RemainingDistance: " + agent.remainingDistance + ". Iniciando espera.</color>");
                     StartCoroutine(WaitAtPointCoroutine());
                 }
             }
@@ -144,7 +136,6 @@ public abstract class EnemyBase : MonoBehaviour
         {
             playerStats.TakeDamage(damage, gameObject);
             lastAttackTime = Time.time;
-            Debug.Log(gameObject.name + ": <color=red>ATACÓ al jugador. Daño: " + damage + "</color>");
         }
     }
 
@@ -153,25 +144,20 @@ public abstract class EnemyBase : MonoBehaviour
         aggro = true;
         if (player != null && agent != null && agent.isActiveAndEnabled)
         {
-            StopAllCoroutines(); // Asegurarse de detener cualquier patrulla activa
+            StopAllCoroutines();
             isPatrolling = false;
             isWaitingAtPoint = false;
-            agent.isStopped = false;
+            agent.isStopped = false; // Asegurarse de que el agente no esté parado al activar aggro
             agent.SetDestination(player.position);
         }
-        Debug.Log("<color=red>" + gameObject.name + ": ¡Aggro activado!</color>");
     }
 
-    // --- Métodos de Patrulla ---
     private void StartPatrol()
     {
         if (pointsOfGo == null || pointsOfGo.Count == 0) return;
 
         isPatrolling = true;
         isWaitingAtPoint = false;
-        Debug.Log(gameObject.name + ": <color=green>Iniciando patrulla.</color>");
-
-        // Mueve al primer punto (o el siguiente si ya estaba en uno)
         MoveToNextPatrolPoint();
     }
 
@@ -179,98 +165,45 @@ public abstract class EnemyBase : MonoBehaviour
     {
         if (pointsOfGo.Count == 0)
         {
-            Debug.LogWarning(gameObject.name + ": No hay puntos de patrulla definidos. Deteniendo patrulla.");
             isPatrolling = false;
             return;
         }
 
-        // Actualiza el índice ANTES de establecer el destino
         currentPointIndex = GetNextPatrolPointIndex();
 
         if (currentPointIndex != -1 && pointsOfGo[currentPointIndex] != null)
         {
             if (agent.isActiveAndEnabled)
             {
-                agent.isStopped = false;
+                agent.isStopped = false; // Asegurarse de que el agente no esté parado al moverse a un nuevo punto de patrulla
                 agent.SetDestination(pointsOfGo[currentPointIndex].transform.position);
-                Debug.Log(gameObject.name + ": <color=cyan>Moviéndose al punto de patrulla: " + pointsOfGo[currentPointIndex].name + " (Índice: " + currentPointIndex + ").</color>");
             }
             else
             {
-                Debug.LogWarning(gameObject.name + ": NavMeshAgent no está activo/habilitado. No puede moverse.");
                 isPatrolling = false;
             }
         }
         else
         {
-            Debug.LogWarning(gameObject.name + ": <color=orange>El punto de patrulla en el índice " + currentPointIndex + " es nulo o la lista está vacía después de la actualización. Deteniendo patrulla.</color>");
-            isPatrolling = false; // Si hay un problema con un punto, detener la patrulla
+            isPatrolling = false;
         }
     }
 
-    // Lógica para obtener el siguiente índice de forma secuencial
     private int GetNextPatrolPointIndex()
     {
         if (pointsOfGo.Count == 0) return -1;
-
-        // Si es la primera vez que se llama, inicia en el punto 0.
-        // Si no, avanza al siguiente punto.
         int nextIndex = (currentPointIndex + 1) % pointsOfGo.Count;
-
-        // La línea de abajo era la que te di antes, es equivalente a la de arriba y está bien.
-        // int nextIndex = currentPointIndex + 1;
-        // if (nextIndex >= pointsOfGo.Count) { nextIndex = 0; }
-
         return nextIndex;
     }
 
     private IEnumerator WaitAtPointCoroutine()
     {
         isWaitingAtPoint = true;
-        if (agent.isActiveAndEnabled) agent.isStopped = true; // Detener el agente
-        Debug.Log(gameObject.name + ": <color=blue>Llegó al punto " + pointsOfGo[currentPointIndex].name + ". Esperando " + patrolWaitTime + " segundos.</color>");
+        if (agent.isActiveAndEnabled) agent.isStopped = true;
 
         yield return new WaitForSeconds(patrolWaitTime);
 
         isWaitingAtPoint = false;
-        Debug.Log(gameObject.name + ": <color=blue>Terminó la espera en el punto " + pointsOfGo[currentPointIndex].name + ". Moviéndose al siguiente.</color>");
-        MoveToNextPatrolPoint(); // Moverse al siguiente punto después de la espera
-    }
-
-    // Para depuración visual en el editor
-    void OnDrawGizmosSelected()
-    {
-        if (pointsOfGo != null && pointsOfGo.Count > 0)
-        {
-            Gizmos.color = Color.cyan;
-            for (int i = 0; i < pointsOfGo.Count; i++)
-            {
-                if (pointsOfGo[i] != null)
-                {
-                    Gizmos.DrawSphere(pointsOfGo[i].transform.position, 0.5f); // Dibuja una esfera en cada punto
-                    // Dibuja líneas entre los puntos para visualizar la ruta
-                    if (i < pointsOfGo.Count - 1 && pointsOfGo[i + 1] != null)
-                    {
-                        Gizmos.DrawLine(pointsOfGo[i].transform.position, pointsOfGo[i + 1].transform.position);
-                    }
-                }
-            }
-            // Conecta el último punto con el primero para un ciclo completo
-            if (pointsOfGo.Count > 1 && pointsOfGo[0] != null && pointsOfGo[pointsOfGo.Count - 1] != null)
-            {
-                Gizmos.DrawLine(pointsOfGo[pointsOfGo.Count - 1].transform.position, pointsOfGo[0].transform.position);
-            }
-        }
-
-        // Dibuja la ruta actual del NavMeshAgent (amarillo)
-        if (agent != null && agent.isActiveAndEnabled && agent.hasPath)
-        {
-            Gizmos.color = Color.yellow;
-            Vector3[] pathCorners = agent.path.corners;
-            for (int i = 0; i < pathCorners.Length - 1; i++)
-            {
-                Gizmos.DrawLine(pathCorners[i], pathCorners[i + 1]);
-            }
-        }
+        MoveToNextPatrolPoint();
     }
 }
